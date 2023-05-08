@@ -77,4 +77,99 @@ spec:
           protocol: TCP
       restartPolicy: Always
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: client-config
+  namespace: test
+data:
+  endpoints: "hello bye"
+  port: "8080"
+  batch: "200"
+  main.sh: |+
+    #!/bin/bash
 
+    HOSTNAME="hello-prometheus.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local."
+    PORT=${PORT:-"8080"}
+    BATCH=${BATCH:-"100"}
+    ENDPOINTS=${ENDPOINTS:-"hello bye"}
+
+    echo "Batch process"
+    for i in ${ENDPOINTS[@]}; do
+      echo "curling to $i"
+      for ((j=0; j<${BATCH};j++)); do
+        echo "curling to $i in $j attempt"
+        curl http://${HOSTNAME}:${PORT}/api/v1/${i} -w " %{http_code}\n"
+      done
+    done
+
+    echo "Zombie process"
+    while true; do echo "curling in zombie attempt"; for i in ${ENDPOINTS[@]}; do curl http://${HOSTNAME}:${PORT}/api/v1/$i -w " %{http_code}\n"; done; sleep 1s; done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: test
+  labels:
+    kubernetes.io/name: client-hello-prometheus
+    kubernetes.io/part-of: testing-prometheus
+spec:
+  selector:
+    matchLabels:
+      kubernetes.io/name: client-hello-prometheus
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%    
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        kubernetes.io/name: client-hello-prometheus
+    spec:
+      containers:
+      - name: client-hello-prometheus
+        image: alpine:3.16
+        imagePullPolicy: IfNotPresent
+        workingDir: /scripts
+        stdin: true
+        command: ["/bin/sh", "-c", "apk add curl bash && ls -al /scripts && bash /scripts/main.sh"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        env:
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: client-config
+              key: port
+        - name: ENDPOINTS
+          valueFrom:
+            configMapKeyRef:
+              name: client-config
+              key: endpoints
+        - name: BATCH
+          valueFrom:
+            configMapKeyRef:
+              name: client-config
+              key: batch
+        volumeMounts:
+        - name: script
+          mountPath: /scripts/main.sh
+          subPath: main.sh
+      volumes:
+        - name: script
+          configMap:
+            name: client-config
+            defaultMode: 0744
+            items:
+            - key: main.sh
+              path: main.sh
+      restartPolicy: Always
+---
