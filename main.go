@@ -2,15 +2,22 @@ package main
 
 import (
 	"math/rand"
+	"time"
 
+	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	ginprometheus "github.com/zsais/go-gin-prometheus"
+	"go.uber.org/zap"
 )
 
 func main() {
 	router := gin.Default()
 
 	p := ginprometheus.NewPrometheus("gin")
+	logger, _ := zap.NewProduction()
+
+	router.Use(ginzap.Ginzap(logger, time.RFC3339, true))
+	router.Use(ginzap.RecoveryWithZap(logger, true))
 	p.Use(router)
 
 	g := router.Group("/api/v1")

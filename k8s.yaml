@@ -11,6 +11,9 @@ metadata:
   labels:
     kubernetes.io/name: hello-prometheus
     kubernetes.io/part-of: testing-prometheus
+  annotations:
+    prometheus.io/port: "8080"
+    prometheus.io/scrape: "true"
 spec:
   selector:
     kubernetes.io/name: hello-prometheus
